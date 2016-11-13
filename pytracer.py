@@ -6,10 +6,13 @@ Created on Nov 9, 2016
 @author: luodichen
 '''
 
+import time
 import struct
 import socket
 import threading
+
 from Queue import Queue
+from Queue import Empty as QueueEmpty
 
 
 class PyTracer(object):
@@ -18,6 +21,11 @@ class PyTracer(object):
     
         
 class ICMPReceiver(object):
+    class TimedoutException(Exception):
+        def __init__(self):
+            pass
+        
+    
     def __init__(self, src_host, dst_host):
         self.src_host = src_host
         self.dst_host = dst_host
@@ -50,6 +58,7 @@ class ICMPReceiver(object):
         
     def worker(self):
         while not self.exit:
+            data, address = None, None
             try:
                 data, address = self.sock.recvfrom(65565)
             except socket.timeout:
@@ -60,10 +69,28 @@ class ICMPReceiver(object):
                 continue
     
     
-    def receive(self, ttl):
-        ret = self.queue.get()
+    def receive(self, ttl, timeout):
+        abs_timeout = time.time() + timeout
+        ret = None
+        
+        while True:
+            rel_timeout = time.time() - abs_timeout
+            if rel_timeout < 0.001:
+                raise self.TimedoutException()
+            
+            result = None
+            try:
+                result = self.queue.get(timeout=rel_timeout)
+            except QueueEmpty:
+                raise self.TimedoutException()
     
-
+            if result[1] == ttl:
+                ret = result[0]
+                break
+        
+        return ret
+    
+            
 class BasePackage(object):
     def __init__(self, data=None):
         if data is not None:
